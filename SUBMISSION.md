@@ -1,8 +1,9 @@
 # SUBMISSION.md — FINAL TEXT, NOT FILED on Devpost.
 
-> Status 2026-10-29: this text is ready to paste at filing time, but
-> NOTHING has been filed. Devpost registration was submitted Oct 29;
-> the project submission itself is NOT filed. Do not paste this
+> Status 2026-11-03 (corrected): this text is ready to paste at filing time, but
+> NOTHING has been filed. Devpost holds only an untitled draft
+> (submission 1271672, 1/5 steps done, team only); the project
+> submission itself is NOT filed. Do not paste this
 > anywhere until the human-only steps at the bottom are done.
 
 ## Honest limits (stated, not hidden)
@@ -82,8 +83,8 @@ Try it in under 15 minutes: `python -m pytest -q`, then `./DEMO.sh`.
 
 ## Human-only steps still owed (nothing below has been done)
 
-1. Devpost sign-in + Official Rules acceptance (registration submitted
-   Oct 29; project submission NOT filed).
+1. Devpost sign-in + Official Rules acceptance (untitled draft on
+   Devpost, submission 1271672, 1/5 steps; project submission NOT filed).
 2. PayPal Developer account creation (then run the real sandbox path
    once and update this file with the result — until then, the
    sandbox-NOT-live-tested limit above stands).
