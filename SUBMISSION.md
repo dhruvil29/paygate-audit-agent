@@ -64,7 +64,7 @@ Try it in under 15 minutes: `python -m pytest -q`, then `./DEMO.sh`.
 
 ## Links to fill in at filing time (do NOT invent these)
 
-- Public GitHub repo URL: ________________ (must show the MIT LICENSE)
+- Public GitHub repo URL: https://github.com/dhruvil29/paygate-audit-agent (MIT LICENSE shown, verified 2026-11-03)
 - Hosted demo URL or repo run instructions: repo run instructions in
   README.md (functional demo, not a mockup)
 - YouTube demo video URL (< 3 minutes): ________________ (human upload)
