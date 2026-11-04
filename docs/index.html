@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PayGate Audit Agent — Interactive Demo</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#1a1a1a;line-height:1.5}
+  .banner{background:#fff3cd;border:2px solid #d9a400;padding:14px 18px;border-radius:8px;font-weight:600}
+  .banner span{display:block;font-weight:400;margin-top:4px}
+  button{padding:10px 18px;margin:6px 6px 6px 0;border:0;border-radius:6px;background:#0b5fff;color:#fff;font-size:16px;cursor:pointer}
+  button.secondary{background:#e8e8e8;color:#1a1a1a}
+  pre{background:#f4f4f4;padding:14px;border-radius:6px;white-space:pre-wrap;word-wrap:break-word}
+  .verdict{font-size:28px;font-weight:800;margin:16px 0}
+  .PASS{color:#0a7a2f}.WARN{color:#b77900}.BLOCK{color:#c00}
+  .finding{margin:6px 0}.finding b{font-family:monospace}
+  footer{margin-top:32px;font-size:14px;color:#555}
+  a{color:#0b5fff}
+</style>
+</head>
+<body>
+<h1>PayGate Audit Agent</h1>
+<p>An agent that audits a checkout <b>before</b> payment — and never touches money without a human saying so.</p>
+
+<div class="banner">⚠️ MOCK DATA DEMO — READ FIRST
+  <span>This page runs entirely in your browser on <b>labelled mock checkout data</b>. It has <b>no live PayPal connection</b>, makes <b>no PayPal calls</b>, and moves <b>no money</b>. The PayPal sandbox path in the real project is code-complete but <b>has not been live-tested</b> — no PayPal Developer account exists yet — so nothing here is a live sandbox result. The audit rules below are the same deterministic rules as the project's <code>paygate/audit.py</code>: same input, same verdict, every run.</span>
+</div>
+
+<h2>Try it</h2>
+<p>Pick a mock checkout, then run the audit. The flagged one is the same data as <code>examples/checkout-flagged.json</code> in the repo; the clean one is <code>examples/checkout-clean.json</code>.</p>
+<button onclick="runAudit('clean')">Audit the clean checkout</button>
+<button class="secondary" onclick="runAudit('flagged')">Audit the flagged checkout</button>
+
+<div id="result"></div>
+
+<h2>What the audit checks</h2>
+<ul>
+  <li>Itemizes every fee and <b>recomputes the total from the line items</b> — stated total vs. computed total.</li>
+  <li>Flags: <b>currency mismatch</b>, <b>total mismatch</b>, <b>missing item data</b>, <b>empty cart</b>, <b>negative amounts</b>.</li>
+  <li>Warns on an <b>unusual fee</b> (one fee line over 30% of the goods subtotal — a documented heuristic, not a PayPal rule) and on <b>risky terms</b> (e.g. "non-refundable", "final sale").</li>
+  <li><b>BLOCK</b> verdict on any blocking issue — the payment step stops here instead of quietly approving.</li>
+  <li><b>Human-gated recovery:</b> if a payment fails, PayGate re-checks the order and proposes a retry capture — but every step waits on a separate, explicit human approval, logged in an append-only, hash-chained audit trail. There is no auto-retry and no way to skip the gate. (The retry flow itself is in the CLI, not on this page, because this page never touches money.)</li>
+</ul>
+
+<h2>Full project</h2>
+<ul>
+  <li>Source code (MIT): <a href="https://github.com/dhruvil29/paygate-audit-agent">github.com/dhruvil29/paygate-audit-agent</a></li>
+  <li>Run it yourself in under 15 minutes, $0: <code>python3 -m pytest -q</code>, then <code>./DEMO.sh</code> — see the repo README.</li>
+  <li>48-second demo video: <a href="https://www.youtube.com/watch?v=yfpxwuLk35M">youtube.com/watch?v=yfpxwuLk35M</a> (rendered from real CLI output of the mock-data demo — not footage of a live PayPal transaction).</li>
+</ul>
+
+<footer>
+  PayGate Audit Agent — built for the PayPal AI Hackathon 2026. Honest limits, stated not hidden: sandbox path not live-tested; this demo runs on labelled mock data only.
+</footer>
+
+<script>
+const CHECKOUTS = {
+  clean: {currency:"USD", fees:{shipping:"5.00"}, items:[
+    {currency:"USD", name:"Widget", quantity:1, unit_price:"24.99"},
+    {currency:"USD", name:"Widget case", quantity:1, unit_price:"5.00"}],
+    tax:"2.40", terms_text:"Free returns within 30 days. Shipping in 3-5 business days.", total:"37.39"},
+  flagged: {currency:"USD", fees:{handling:"15.00"}, items:[
+    {currency:"EUR", name:"Gadget", quantity:1, unit_price:"20.00"},
+    {currency:"USD", name:"", quantity:1, unit_price:"10.00"}],
+    tax:"0.00", terms_text:"This item is non-refundable. Final sale.", total:"99.99"}
+};
+const RISK = ["non-refundable","no refund","final sale","auto-renew","subscription renews","restocking fee"];
+const money = n => (Math.round(n*100)/100).toFixed(2);
+
+function audit(c){
+  const findings = [];
+  if(!c.items.length) findings.push({sev:"error",code:"EMPTY_CART",msg:"Checkout has no items."});
+  let subtotal = 0;
+  for(const it of c.items){
+    const price = parseFloat(it.unit_price);
+    if(!it.name.trim()) findings.push({sev:"error",code:"MISSING_ITEM_DATA",msg:"An item has no name."});
+    if(it.quantity <= 0) findings.push({sev:"error",code:"MISSING_ITEM_DATA",msg:`Item '${it.name}' has quantity ${it.quantity}.`});
+    if(price < 0) findings.push({sev:"error",code:"NEGATIVE_AMOUNT",msg:`Item '${it.name}' has a negative price.`});
+    if(it.currency !== c.currency) findings.push({sev:"error",code:"CURRENCY_MISMATCH",msg:`Item '${it.name}' is priced in ${it.currency} but the checkout currency is ${c.currency}.`});
+    subtotal += price * it.quantity;
+  }
+  subtotal = parseFloat(money(subtotal));
+  let feeTotal = 0;
+  for(const [name,val] of Object.entries(c.fees)){
+    const amount = parseFloat(val);
+    if(amount < 0) findings.push({sev:"error",code:"NEGATIVE_AMOUNT",msg:`Fee '${name}' is negative.`});
+    else if(subtotal > 0 && amount > subtotal * 0.30) findings.push({sev:"warning",code:"UNUSUAL_FEE",msg:`Fee '${name}' (${money(amount)}) is over 30% of the goods subtotal (${money(subtotal)}).`});
+    feeTotal += amount;
+  }
+  const tax = parseFloat(c.tax);
+  if(tax < 0) findings.push({sev:"error",code:"NEGATIVE_AMOUNT",msg:"Tax is negative."});
+  const computed = parseFloat(money(subtotal + feeTotal + tax));
+  const stated = parseFloat(c.total);
+  if(Math.abs(stated - computed) > 0.01) findings.push({sev:"error",code:"TOTAL_MISMATCH",msg:`Stated total ${money(stated)} does not match computed total ${money(computed)} (subtotal ${money(subtotal)} + fees ${money(feeTotal)} + tax ${money(tax)}).`});
+  if(!c.terms_text.trim()) findings.push({sev:"warning",code:"TERMS_MISSING",msg:"No terms text supplied with the checkout."});
+  else if(RISK.some(k => c.terms_text.toLowerCase().includes(k))) findings.push({sev:"warning",code:"TERMS_RISK_KEYWORD",msg:"Terms contain a buyer-risk keyword (e.g. non-refundable / final sale)."});
+  const verdict = findings.some(f=>f.sev==="error") ? "BLOCK" : findings.length ? "WARN" : "PASS";
+  const hits = RISK.filter(k => c.terms_text.toLowerCase().includes(k));
+  const first = c.terms_text.trim().split(".")[0].trim();
+  const termsSummary = !c.terms_text.trim() ? "No terms text supplied; nothing could be summarized."
+    : hits.length ? `Terms flag keywords present: ${hits.join(", ")}. Opening line: ${first}.`
+    : `Terms opening line: ${first}.`;
+  return {verdict, subtotal, feeTotal, tax, computed, stated, findings, termsSummary};
+}
+
+function runAudit(which){
+  const c = CHECKOUTS[which];
+  const r = audit(c);
+  const items = c.items.map(it=>`  • ${it.name || "(no name)"} × ${it.quantity} @ ${it.currency} ${it.unit_price}`).join("\n");
+  const fees = Object.entries(c.fees).map(([k,v])=>`  • ${k}: ${v}`).join("\n");
+  const findings = r.findings.length
+    ? r.findings.map(f=>`<div class="finding">[${f.sev.toUpperCase()}] <b>${f.code}</b> — ${f.msg}</div>`).join("")
+    : "<div>No findings — everything checks out.</div>";
+  const plain = r.verdict === "BLOCK"
+    ? "Plain English: do NOT pay this yet. The total does not add up, and at least one item is priced in a different currency or missing its name. Fix the checkout first."
+    : "Plain English: this checkout adds up. Itemized total matches the stated total, fees are ordinary, and the terms look buyer-friendly.";
+  document.getElementById("result").innerHTML = `
+    <h2>Mock checkout: ${which}</h2>
+    <pre>Items:\n${items}\nFees:\n${fees}\nTax: ${money(r.tax)}\nCheckout currency: ${c.currency}</pre>
+    <div class="verdict ${r.verdict}">Verdict: ${r.verdict}</div>
+    <p>Subtotal ${money(r.subtotal)} + fees ${money(r.feeTotal)} + tax ${money(r.tax)} = <b>computed total ${money(r.computed)}</b> (stated total: ${money(r.stated)})</p>
+    <p>${plain}</p>
+    <h3>Findings</h3>${findings}
+    <h3>Terms summary</h3><p>${r.termsSummary}</p>
+    <p><i>Source: mock data, labelled as such. No PayPal call was made — this ran entirely in your browser.</i></p>`;
+}
+</script>
+</body>
+</html>
